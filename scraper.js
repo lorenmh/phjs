@@ -1,38 +1,22 @@
-/* jshint ignore: start */
+/* global phantom */
 
-var system = require('system'),
-    s = require('./scrapes/google.js')
+var webserver = require('webserver'),
+    system = require('system'),
+    extract = require('./extract'),
+    server = webserver.create()
 ;
 
-var path
-;
-
-// while (path = system.stdin.readLine()) {
-//   extract(path, function(data) {
-//     system.stdout.writeLine(data);
-//   });
-// }
-
-s('http://lorenhoward.com', function(err, data) {
-  if (err) {
-    system.stderr.writeLine(err);
+function write(error, data) {
+  if (error) {
+    system.stderr.writeLine(error);
   } else {
-    system.stdout.writeLine('title: ' + data);
+    system.stdout.writeLine(JSON.stringify(data));
   }
-});
+}
 
-s('http://www.facebook.com', function(err, data) {
-  if (err) {
-    system.stderr.writeLine(err);
-  } else {
-    system.stdout.writeLine('title: ' + data);
-  }
-});
-
-s('http://www.hiqlabs.com', function(err, data) {
-  if (err) {
-    system.stderr.writeLine(err);
-  } else {
-    system.stdout.writeLine('title: ' + data);
-  }
+server.listen(5000, function(req, res) {
+  extract(req.post, write);
+  
+  res.statusCode = 200;
+  res.close();
 });

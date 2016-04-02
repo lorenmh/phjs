@@ -1,6 +1,11 @@
 module.exports = [
   {
-    re: /www\..+\.com/,
-    fn: require('./scrapes/google')
+    re: /^http:\/\/www\.lorenhoward\.com/,
+    fn: require('./extractors/google')
+  },
+
+  {
+    re: /^https?:\/\/www\.audiosf\.com/,
+    fn: require('./extractors/audiosf')
   }
 ];
