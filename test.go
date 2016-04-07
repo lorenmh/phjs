@@ -1,27 +1,23 @@
 package main
 
 import (
-  "fmt"
   "bufio"
   "sync"
   "os"
   "os/exec"
+  "os/signal"
   "io"
+  "syscall"
+  "fmt"
 )
 
-//const command = "python"
-const command = "printf"
-//var args = []string{"-c", "print \"o\" * 100000"}
-//var a1 = "-c"
-var a1 = "foo\nbar\nbaz\nblah\n"
-
-//var a2 = "\"print \\\"%dA\\\" * 10000; print \\\"\\n\\\"; print \\\"%dB\\\" * 1000\""
-//var a2 = "a=1;print a;print a + 1;print a+2"
-//var a2 = "print \"FACk\""
-var i = 1
+const command = "node"
+var args = []string{"a.js"}
 
 var stdoutMutex = new(sync.Mutex)
 var stderrMutex = new(sync.Mutex)
+
+var _ = fmt.Printf
 
 type Scraper struct {
   uri string
@@ -30,25 +26,36 @@ type Scraper struct {
 }
 
 func NewScraper() *Scraper {
-  // cmd := exec.Command(command, args...)
-  fmt.Printf("FMF")
-  //fmt.Println(a2)
-  //cmd := exec.Command(command, a1, fmt.Sprintf(a2, i, i))
-  //cmd := exec.Command(command, a1, a2)
-  cmd := exec.Command(command, a1)
-  i += 1
+  cmd := exec.Command(command, args...)
   return &Scraper{"uri", cmd, make(chan bool)}
 }
 
 func (s *Scraper) Start(wg *sync.WaitGroup) {
   s.PipeStdout()
-  //s.PipeStderr()
+  s.PipeStderr()
   s.cmd.Start()
 
   wg.Add(1)
 
+  signalStop := make(chan os.Signal, 1)
+
+  signal.Notify(
+    signalStop,
+    syscall.SIGHUP,
+    syscall.SIGINT,
+    syscall.SIGTERM,
+    syscall.SIGQUIT,
+  )
+
   go func() {
     <-s.done
+    <-s.done
+    s.Kill(wg)
+  }()
+
+  go func() {
+    <-signalStop
+    fmt.Println("killed")
     s.Kill(wg)
   }()
 }
@@ -59,80 +66,83 @@ func (s *Scraper) Kill(wg *sync.WaitGroup) {
 }
 
 func (s *Scraper) PipeStdout() {
-  var pipe io.Reader
-  var err error
-
-  pipe, err = s.cmd.StdoutPipe()
+  pipe, err := s.cmd.StdoutPipe()
+  reader := bufio.NewReader(pipe)
 
   if err != nil {
     panic(err)
   }
 
-  scanner := bufio.NewScanner(pipe)
-
   go func() {
-    for scanner.Scan() {
-      fmt.Printf("stdout: %s", scanner.Text())
+    for {
+      line, readErr := reader.ReadBytes('\n');
+
+      if readErr == io.EOF {
+        break
+      }
+
+      if readErr != nil {
+        panic(readErr)
+      }
+
       stdoutMutex.Lock()
-      defer stdoutMutex.Unlock()
 
-      _, err = os.Stdout.Write([]byte(scanner.Text()))
+      _, writeErr := os.Stdout.Write(line)
 
-      if err != nil {
-        panic(err)
+      if writeErr != nil {
+        panic(writeErr)
       }
 
-      _, err = os.Stdout.Write([]byte("\n"))
-
-      if err != nil {
-        panic(err)
-      }
+      stdoutMutex.Unlock()
     }
 
-    fmt.Println("done stdout")
     s.done <- true
   }()
 }
 
 func (s *Scraper) PipeStderr() {
-  var pipe io.Reader
-  var err error
-
-  pipe, err = s.cmd.StderrPipe()
+  pipe, err := s.cmd.StderrPipe()
+  reader := bufio.NewReader(pipe)
 
   if err != nil {
     panic(err)
   }
 
-  scanner := bufio.NewScanner(pipe)
-
   go func() {
-    for scanner.Scan() {
-      fmt.Printf("stderr: %s", scanner.Text())
+    for {
+      line, readErr := reader.ReadBytes('\n');
+
+      if readErr == io.EOF {
+        break
+      }
+
+      if readErr != nil {
+        panic(readErr)
+      }
+
       stderrMutex.Lock()
-      defer stderrMutex.Unlock()
 
-      _, err = os.Stderr.Write([]byte(scanner.Text()))
+      _, writeErr := os.Stderr.Write(line)
 
-      if err != nil {
-        panic(err)
+      if writeErr != nil {
+        panic(writeErr)
       }
 
-      _, err = os.Stderr.Write([]byte("\n"))
-
-      if err != nil {
-        panic(err)
-      }
+      stderrMutex.Unlock()
     }
-    fmt.Println("done stderr")
+
     s.done <- true
   }()
 }
 
 func main() {
   wg := &sync.WaitGroup{}
-  s := NewScraper()
-  s.Start(wg)
-  // block until waitgroup is complete
+
+  s1 := NewScraper()
+  s2 := NewScraper()
+
+  s1.Start(wg)
+  s2.Start(wg)
+
   wg.Wait()
 }
