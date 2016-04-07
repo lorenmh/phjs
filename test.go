@@ -55,7 +55,6 @@ func (s *Scraper) Start(wg *sync.WaitGroup) {
 
   go func() {
     <-signalStop
-    fmt.Println("killed")
     s.Kill(wg)
   }()
 }
