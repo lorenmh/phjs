@@ -1,79 +1,138 @@
 package main
 
 import (
-  "time"
-  "math/rand"
+  "fmt"
+  "bufio"
   "sync"
   "os"
+  "os/exec"
   "io"
-  "fmt"
-  "strings"
 )
 
-const bufferSize = 4096
+//const command = "python"
+const command = "printf"
+//var args = []string{"-c", "print \"o\" * 100000"}
+//var a1 = "-c"
+var a1 = "foo\nbar\nbaz\nblah\n"
 
-var wg = sync.WaitGroup{}
+//var a2 = "\"print \\\"%dA\\\" * 10000; print \\\"\\n\\\"; print \\\"%dB\\\" * 1000\""
+//var a2 = "a=1;print a;print a + 1;print a+2"
+//var a2 = "print \"FACk\""
+var i = 1
 
-var mutex = &sync.Mutex{}
+var stdoutMutex = new(sync.Mutex)
+var stderrMutex = new(sync.Mutex)
 
-// main question is regarding this 'WriteStdout' function; is this done in the
-// correct way? How should I improve this?
-// WriteStdout takes a io.Reader, locks until the reader has been read from,
-// then unlocks.
-func WriteStdout(r io.Reader) {
-  // lock the mutex
-  mutex.Lock()
-  // defer unlocking the mutex
-  defer mutex.Unlock()
-
-  // create a new buffer of size bufferSize (4096)
-  buffer := make([]byte, bufferSize)
-
-  // read all of the bytes from the reader and output
-  for {
-    // read from the reader into the buffer
-    bytesRead, readErr := r.Read(buffer)
-
-    // if bytesRead is 0 then we are done
-    if bytesRead == 0 {
-      break
-    }
-
-    // write to Stdout
-    _, writeErr := os.Stdout.Write(buffer)
-
-    // check for a read error AFTER writing (go docs said to do this)
-    if readErr != nil {
-      panic(readErr)
-    }
-
-    // check for a write error
-    if writeErr != nil {
-      panic(writeErr)
-    }
-  }
+type Scraper struct {
+  uri string
+  cmd *exec.Cmd
+  done chan bool
 }
 
-func output(index int) {
-  // to add some randomness to the order of the operations
-  time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
-  // write to stdout
-  WriteStdout(strings.NewReader(fmt.Sprintf("Hello from %d\n", index)))
-  // decrement the waitgroup
+func NewScraper() *Scraper {
+  // cmd := exec.Command(command, args...)
+  fmt.Printf("FMF")
+  //fmt.Println(a2)
+  //cmd := exec.Command(command, a1, fmt.Sprintf(a2, i, i))
+  //cmd := exec.Command(command, a1, a2)
+  cmd := exec.Command(command, a1)
+  i += 1
+  return &Scraper{"uri", cmd, make(chan bool)}
+}
+
+func (s *Scraper) Start(wg *sync.WaitGroup) {
+  s.PipeStdout()
+  //s.PipeStderr()
+  s.cmd.Start()
+
+  wg.Add(1)
+
+  go func() {
+    <-s.done
+    s.Kill(wg)
+  }()
+}
+
+func (s *Scraper) Kill(wg *sync.WaitGroup) {
+  s.cmd.Process.Kill()
   wg.Done()
 }
 
-func main() {
-  rand.Seed(time.Now().UTC().UnixNano())
+func (s *Scraper) PipeStdout() {
+  var pipe io.Reader
+  var err error
 
-  for i := 0; i < 20; i++ {
-    // create a new go routine to output
-    go output(i)
+  pipe, err = s.cmd.StdoutPipe()
 
-    // increment waitgroup
-    wg.Add(1)
+  if err != nil {
+    panic(err)
   }
 
-  // block until waitgroups is complete
+  scanner := bufio.NewScanner(pipe)
+
+  go func() {
+    for scanner.Scan() {
+      fmt.Printf("stdout: %s", scanner.Text())
+      stdoutMutex.Lock()
+      defer stdoutMutex.Unlock()
+
+      _, err = os.Stdout.Write([]byte(scanner.Text()))
+
+      if err != nil {
+        panic(err)
+      }
+
+      _, err = os.Stdout.Write([]byte("\n"))
+
+      if err != nil {
+        panic(err)
+      }
+    }
+
+    fmt.Println("done stdout")
+    s.done <- true
+  }()
+}
+
+func (s *Scraper) PipeStderr() {
+  var pipe io.Reader
+  var err error
+
+  pipe, err = s.cmd.StderrPipe()
+
+  if err != nil {
+    panic(err)
+  }
+
+  scanner := bufio.NewScanner(pipe)
+
+  go func() {
+    for scanner.Scan() {
+      fmt.Printf("stderr: %s", scanner.Text())
+      stderrMutex.Lock()
+      defer stderrMutex.Unlock()
+
+      _, err = os.Stderr.Write([]byte(scanner.Text()))
+
+      if err != nil {
+        panic(err)
+      }
+
+      _, err = os.Stderr.Write([]byte("\n"))
+
+      if err != nil {
+        panic(err)
+      }
+    }
+    fmt.Println("done stderr")
+    s.done <- true
+  }()
+}
+
+func main() {
+  wg := &sync.WaitGroup{}
+  s := NewScraper()
+  s.Start(wg)
+  // block until waitgroup is complete
   wg.Wait()
 }

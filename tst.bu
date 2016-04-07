@@ -1,0 +1,125 @@
+package main
+
+import (
+  "time"
+  "math/rand"
+  "sync"
+  "os"
+  "io"
+  "fmt"
+  "strings"
+  "bytes"
+)
+
+const bufferSize = 4096
+
+var wg = sync.WaitGroup{}
+
+var stdoutMutex = new(sync.Mutex)
+var stderrMutex = new(sync.Mutex)
+
+type Scraper struct {
+  uri string
+  cmd *exec.Cmd
+  stdout *bytes.Buffer
+  stderr *bytes.Buffer
+}
+
+func (s *Scraper) NewScraper() {
+  cmd := exec.Command("echo", "foo bar")
+
+  stdout := new(bytes.Buffer)
+  stderr := new(bytes.Buffer)
+}
+
+func WriteStderr(r io.Reader) {
+  // lock the mutex
+  stderrMutex.Lock()
+  // defer unlocking the mutex
+  defer stderrMutex.Unlock()
+
+  // create a new buffer of size bufferSize (4096)
+  buffer := make([]byte, bufferSize)
+
+  // read all of the bytes from the reader and output
+  for {
+    // read from the reader into the buffer
+    bytesRead, readErr := r.Read(buffer)
+
+    // if bytesRead is 0 then we are done
+    if bytesRead == 0 {
+      break
+    }
+
+    // write to Stdout
+    _, writeErr := os.Stderr.Write(buffer)
+
+    // check for a read error AFTER writing (go docs said to do this)
+    if readErr != nil {
+      panic(readErr)
+    }
+
+    // check for a write error
+    if writeErr != nil {
+      panic(writeErr)
+    }
+  }
+}
+
+func WriteStdout(r io.Reader) {
+  // lock the mutex
+  stdoutMutex.Lock()
+  // defer unlocking the mutex
+  defer stdoutMutex.Unlock()
+
+  // create a new buffer of size bufferSize (4096)
+  buffer := make([]byte, bufferSize)
+
+  // read all of the bytes from the reader and output
+  for {
+    // read from the reader into the buffer
+    bytesRead, readErr := r.Read(buffer)
+
+    // if bytesRead is 0 then we are done
+    if bytesRead == 0 {
+      break
+    }
+
+    // write to Stdout
+    _, writeErr := os.Stdout.Write(buffer)
+
+    // check for a read error AFTER writing (go docs said to do this)
+    if readErr != nil {
+      panic(readErr)
+    }
+
+    // check for a write error
+    if writeErr != nil {
+      panic(writeErr)
+    }
+  }
+}
+
+func output(index int) {
+  // to add some randomness to the order of the operations
+  time.Sleep(time.Duration(rand.Intn(1000)) * time.Millisecond)
+  // write to stdout
+  WriteStdout(strings.NewReader(fmt.Sprintf("Hello from %d\n", index)))
+  // decrement the waitgroup
+  wg.Done()
+}
+
+func main() {
+  rand.Seed(time.Now().UTC().UnixNano())
+
+  for i := 0; i < 20; i++ {
+    // create a new go routine to output
+    go output(i)
+
+    // increment waitgroup
+    wg.Add(1)
+  }
+
+  // block until waitgroup is complete
+  wg.Wait()
+}
