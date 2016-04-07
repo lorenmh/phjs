@@ -22,17 +22,17 @@ var _ = fmt.Printf
 type Scraper struct {
   uri string
   cmd *exec.Cmd
-  done chan bool
 }
 
 func NewScraper() *Scraper {
   cmd := exec.Command(command, args...)
-  return &Scraper{"uri", cmd, make(chan bool)}
+  return &Scraper{"uri", cmd}
 }
 
 func (s *Scraper) Start(wg *sync.WaitGroup) {
-  s.PipeStdout()
-  s.PipeStderr()
+  stdoutDone := s.PipeStdout()
+  stderrDone := s.PipeStderr()
+
   s.cmd.Start()
 
   wg.Add(1)
@@ -48,8 +48,8 @@ func (s *Scraper) Start(wg *sync.WaitGroup) {
   )
 
   go func() {
-    <-s.done
-    <-s.done
+    <-stdoutDone
+    <-stderrDone
     s.Kill(wg)
   }()
 
@@ -65,13 +65,16 @@ func (s *Scraper) Kill(wg *sync.WaitGroup) {
   wg.Done()
 }
 
-func (s *Scraper) PipeStdout() {
-  pipe, err := s.cmd.StdoutPipe()
+func (s *Scraper) PipeStdout() <-chan bool {
+  pipe, pipeErr := s.cmd.StdoutPipe()
+
+  if pipeErr != nil {
+    panic(pipeErr)
+  }
+
   reader := bufio.NewReader(pipe)
 
-  if err != nil {
-    panic(err)
-  }
+  done := make(chan bool)
 
   go func() {
     for {
@@ -96,17 +99,22 @@ func (s *Scraper) PipeStdout() {
       stdoutMutex.Unlock()
     }
 
-    s.done <- true
+    done <- true
   }()
+
+  return done
 }
 
-func (s *Scraper) PipeStderr() {
-  pipe, err := s.cmd.StderrPipe()
+func (s *Scraper) PipeStderr() <-chan bool {
+  pipe, pipeErr := s.cmd.StderrPipe()
+
+  if pipeErr != nil {
+    panic(pipeErr)
+  }
+
   reader := bufio.NewReader(pipe)
 
-  if err != nil {
-    panic(err)
-  }
+  done := make(chan bool)
 
   go func() {
     for {
@@ -131,8 +139,10 @@ func (s *Scraper) PipeStderr() {
       stderrMutex.Unlock()
     }
 
-    s.done <- true
+    done <- true
   }()
+
+  return done
 }
 
 func main() {
