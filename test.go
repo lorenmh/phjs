@@ -34,9 +34,13 @@ func createUri(port int) string {
   return fmt.Sprintf("http://%s:%d", host, port)
 }
 
+func itos(i int) string {
+  return fmt.Sprintf("%d", i)
+}
+
 func NewScraper() *Scraper {
   uri := createUri(port)
-  cmd := exec.Command(command, arg1, fmt.Sprintf("%d", port))
+  cmd := exec.Command(command, arg1, itos(port))
 
   port += 1
 
@@ -48,14 +52,7 @@ func NewScraper() *Scraper {
 func (s *Scraper) Scrape(message string) {
   buffer := strings.NewReader(message)
 
-  response, _ := http.Post(s.uri, "application/json", buffer)
-
-  fmt.Println(response)
-  //fmt.Println(err)
-
-  //if err != nil {
-    //panic(err)
-  //}
+  http.Post(s.uri, "application/json", buffer)
 }
 
 func (s *Scraper) Start(wg *sync.WaitGroup) {
@@ -92,7 +89,6 @@ func (s *Scraper) Start(wg *sync.WaitGroup) {
 }
 
 func (s *Scraper) Kill(wg *sync.WaitGroup) {
-  fmt.Println("KILLING")
   s.cmd.Process.Kill()
   wg.Done()
 }
@@ -180,15 +176,16 @@ func (s *Scraper) PipeStderr() <-chan bool {
 func main() {
   wg := &sync.WaitGroup{}
 
-  s1 := NewScraper()
-  //s2 := NewScraper()
+  scrapers := make([]*Scraper, 1)
 
-  s1.Start(wg)
-  //s2.Start(wg)
-
-  time.Sleep(1000 * time.Millisecond)
   str := "http://www.audiosf.com/events/"
-  s1.Scrape(str)
+  for i := range scrapers {
+    scrapers[i] = NewScraper()
+    scrapers[i].Start(wg)
+  }
+
+  time.Sleep(2000 * time.Millisecond)
+  scrapers[0].Scrape(str)
 
   wg.Wait()
 }
