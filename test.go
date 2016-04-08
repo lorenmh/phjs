@@ -2,6 +2,7 @@ package main
 
 import (
   "bufio"
+  "strings"
   "sync"
   "os"
   "os/exec"
@@ -9,10 +10,15 @@ import (
   "io"
   "syscall"
   "fmt"
+  "net/http"
+  "time"
 )
 
-const command = "node"
-var args = []string{"a.js"}
+// phantomjs --proxy=ip:port script.js
+const host = "127.0.0.1"
+const command = "phantomjs"
+var arg1 = "scraper.js"
+var port = 5000
 
 var stdoutMutex = new(sync.Mutex)
 var stderrMutex = new(sync.Mutex)
@@ -24,16 +30,42 @@ type Scraper struct {
   cmd *exec.Cmd
 }
 
+func createUri(port int) string {
+  return fmt.Sprintf("http://%s:%d", host, port)
+}
+
 func NewScraper() *Scraper {
-  cmd := exec.Command(command, args...)
-  return &Scraper{"uri", cmd}
+  uri := createUri(port)
+  cmd := exec.Command(command, arg1, fmt.Sprintf("%d", port))
+
+  port += 1
+
+  return &Scraper{uri, cmd}
+}
+
+// message can be a path, a JSON object, whatever.  The scrape script will
+// handle whatever is passed to it
+func (s *Scraper) Scrape(message string) {
+  buffer := strings.NewReader(message)
+
+  response, _ := http.Post(s.uri, "application/json", buffer)
+
+  fmt.Println(response)
+  //fmt.Println(err)
+
+  //if err != nil {
+    //panic(err)
+  //}
 }
 
 func (s *Scraper) Start(wg *sync.WaitGroup) {
   stdoutDone := s.PipeStdout()
   stderrDone := s.PipeStderr()
 
-  s.cmd.Start()
+  startErr := s.cmd.Start()
+  if startErr != nil {
+    panic(startErr)
+  }
 
   wg.Add(1)
 
@@ -60,6 +92,7 @@ func (s *Scraper) Start(wg *sync.WaitGroup) {
 }
 
 func (s *Scraper) Kill(wg *sync.WaitGroup) {
+  fmt.Println("KILLING")
   s.cmd.Process.Kill()
   wg.Done()
 }
@@ -148,10 +181,14 @@ func main() {
   wg := &sync.WaitGroup{}
 
   s1 := NewScraper()
-  s2 := NewScraper()
+  //s2 := NewScraper()
 
   s1.Start(wg)
-  s2.Start(wg)
+  //s2.Start(wg)
+
+  time.Sleep(1000 * time.Millisecond)
+  str := "http://www.audiosf.com/events/"
+  s1.Scrape(str)
 
   wg.Wait()
 }

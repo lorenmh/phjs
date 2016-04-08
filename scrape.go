@@ -37,7 +37,7 @@ type ScraperQueue struct {
   wg sync.WaitGroup
   current int
 }
-
+asd
 func NewScraperQueue() *ScraperQueue {
   scrapers := make([]Scraper, num_scraper_proc)
   var wg sync.WaitGroup
