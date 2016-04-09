@@ -11,7 +11,7 @@ import (
   "syscall"
   "fmt"
   "net/http"
-  "time"
+ // "time"
 )
 
 // phantomjs --proxy=ip:port script.js
@@ -184,8 +184,8 @@ func main() {
     scrapers[i].Start(wg)
   }
 
-  time.Sleep(2000 * time.Millisecond)
-  scrapers[0].Scrape(str)
+  //time.Sleep(2000 * time.Millisecond)
+  defer scrapers[0].Scrape(str)
 
   wg.Wait()
 }
