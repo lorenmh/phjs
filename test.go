@@ -11,7 +11,7 @@ import (
   "syscall"
   "fmt"
   "net/http"
- // "time"
+  "time"
 )
 
 // phantomjs --proxy=ip:port script.js
@@ -20,10 +20,10 @@ const command = "phantomjs"
 var arg1 = "scraper.js"
 var port = 5000
 
+const maxAttempts = 10
+
 var stdoutMutex = new(sync.Mutex)
 var stderrMutex = new(sync.Mutex)
-
-var _ = fmt.Printf
 
 type Scraper struct {
   uri string
@@ -52,7 +52,26 @@ func NewScraper() *Scraper {
 func (s *Scraper) Scrape(message string) {
   buffer := strings.NewReader(message)
 
-  http.Post(s.uri, "application/json", buffer)
+  attempts := 0
+
+  for {
+    resp, err := http.Post(s.uri, "application/json", buffer)
+
+    if err != nil {
+      WriteStderr([]byte(fmt.Sprintf("waiting %s ... %d\n", s.uri, attempts)))
+      time.Sleep(500 * time.Millisecond)
+      attempts += 1
+
+      if attempts > maxAttempts {
+        panic(err)
+      }
+
+      continue
+    } else {
+      resp.Body.Close()
+      break
+    }
+  }
 }
 
 func (s *Scraper) Start(wg *sync.WaitGroup) {
@@ -116,15 +135,7 @@ func (s *Scraper) PipeStdout() <-chan bool {
         panic(readErr)
       }
 
-      stdoutMutex.Lock()
-
-      _, writeErr := os.Stdout.Write(line)
-
-      if writeErr != nil {
-        panic(writeErr)
-      }
-
-      stdoutMutex.Unlock()
+      WriteStdout(line)
     }
 
     done <- true
@@ -156,15 +167,7 @@ func (s *Scraper) PipeStderr() <-chan bool {
         panic(readErr)
       }
 
-      stderrMutex.Lock()
-
-      _, writeErr := os.Stderr.Write(line)
-
-      if writeErr != nil {
-        panic(writeErr)
-      }
-
-      stderrMutex.Unlock()
+      WriteStderr(line)
     }
 
     done <- true
@@ -173,19 +176,42 @@ func (s *Scraper) PipeStderr() <-chan bool {
   return done
 }
 
+func WriteStdout(line []byte) {
+  stdoutMutex.Lock()
+
+  _, writeErr := os.Stdout.Write(line)
+
+  if writeErr != nil {
+    panic(writeErr)
+  }
+
+  stdoutMutex.Unlock()
+}
+
+func WriteStderr(line []byte) {
+  stderrMutex.Lock()
+
+  _, writeErr := os.Stderr.Write(line)
+
+  if writeErr != nil {
+    panic(writeErr)
+  }
+
+  stderrMutex.Unlock()
+}
+
 func main() {
   wg := &sync.WaitGroup{}
 
-  scrapers := make([]*Scraper, 1)
+  scrapers := make([]*Scraper, 10)
 
   str := "http://www.audiosf.com/events/"
   for i := range scrapers {
     scrapers[i] = NewScraper()
     scrapers[i].Start(wg)
+    go scrapers[i].Scrape(str)
   }
 
-  //time.Sleep(2000 * time.Millisecond)
-  defer scrapers[0].Scrape(str)
 
   wg.Wait()
 }
